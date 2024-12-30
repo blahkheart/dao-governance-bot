@@ -1,89 +1,124 @@
-# gm_bot
+# dao-governance-bot
 
 ## Introduction
 
-`gm_bot` is an automated messaging bot designed to cast a 'gm 🪐' message in Warpcast every day at a scheduled time. The bot operates continuously as long as the system remains online. It leverages [Neynar API](https://docs.neynar.com/) and is built using [@neynar/nodejs-sdk](https://www.npmjs.com/package/@neynar/nodejs-sdk).
+`dao-governance-bot` is an automated messaging bot designed to monitor DAO governance activities and broadcast updates to Farcaster. It tracks proposal creation, voting periods, and execution states, providing real-time updates to the community. The bot leverages the [Neynar API](https://docs.neynar.com/) for Farcaster interactions and integrates with both on-chain governance and Snapshot.
+
+## Features
+
+- Monitors on-chain governance proposals
+- Tracks Snapshot proposals through webhooks
+- Announces proposal creation, voting start/end, queuing, and execution
+- Persists proposal data in MongoDB
+- Supports both local and containerized deployment
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/en/): A JavaScript runtime built on Chrome's V8 JavaScript engine. Ensure you have Node.js installed on your system.
+- [Node.js](https://nodejs.org/en/) (v20 or later)
+- [Docker](https://www.docker.com/) (if using containerized deployment)
+- [MongoDB](https://www.mongodb.com/) instance
+- Optimism (OP) Mainnet wallet with funds for signer registration
 
 ## Installation
 
 ### Setting Up the Environment
 
-1. **Install Project Dependencies**: Navigate to the project directory and run one of the following commands to install all required dependencies:
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/dao-governance-bot.git
+   cd dao-governance-bot
+   ```
 
+2. Install dependencies:
    ```bash
    yarn install
    # or
    npm install
    ```
 
-2. **Configure Environment Variables**:
-   - Copy the example environment file:
-     ```bash
-     cp .env.example .env
-     ```
-   - Edit `.env` to add your `NEYNAR_API_KEY` and `FARCASTER_DEVELOPER_MNEMONIC`. Optionally, you can also specify `PUBLISH_CAST_TIME` and `TIME_ZONE` for custom scheduling.
+3. Configure environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Required environment variables:
+   - `MONGODB_URI`: MongoDB connection string
+   - `NEYNAR_API_KEY`: Your Neynar API key
+   - `FARCASTER_BOT_MNEMONIC`: Bot's Farcaster mnemonic
+   - `ALCHEMY_API_KEY`: Alchemy API key for blockchain interactions
+   - `DAO_GOVERNOR_ADDRESS`: Address of the DAO governor contract
+   - `ERC20_ADDRESS`: Address of the governance token
+   - `SIGNER_UUID`: (Will be generated in next step)
 
 ### Generating a Signer
 
-Before running the bot, you need to generate a signer and get it approved via an onchain transaction. To execute the transaction, you'll need a browser extension wallet with funded roughly $2 worth of OP ETH on the Optimism mainnet. This is crucial for the bot's operation. Run the following command:
+Before running the bot, generate and approve a signer:
 
-```bash
-yarn get-approved-signer
-```
+1. Run the signer generation script:
+   ```bash
+   yarn get-approved-signer
+   ```
 
-### Approving a signer
-
-In order to get an approved signer you need to do an on-chain transaction on OP mainnet.
-Go to Farcaster KeyGateway optimism explorer
-https://optimistic.etherscan.io/address/0x00000000fc56947c7e7183f8ca4b62398caadf0b#writeContract
-
-Connect to Web3.
-
-Navigate to `addFor` function and add following values inside the respective placeholders. You will see values for fidOwner, keyType, key, metadataType, metadata, deadline, sig in your terminal logs.
-
-Press "Write" to execute the transaction. This will create a signer for your mnemonic on the OP mainnet.
+2. Follow the terminal instructions to approve the signer on Optimism mainnet through the KeyGateway contract.
 
 ## Running the Bot
 
-1. **Watch the bot**: To run the bot in watch mode, use the following command:
+### Local Development
 
+1. Start in development mode:
    ```bash
    yarn watch
-   # or
-   npm run watch
    ```
 
-2. **Start the Bot**: Launch the bot using the following command:
-
+2. In a separate terminal, run:
    ```bash
-   yarn start
-   # or
-   npm run start
+   yarn start:gov
    ```
 
-3. **Stopping the Bot**: If you need to stop the bot, kill the instance.
+### Using Docker
 
-4. **Run the app for local development**: Launch the bot using the following command:
-
+1. For development:
    ```bash
    docker-compose up --build
    ```
-5. **For production**: Launch the bot using the following command:
 
+2. For production:
    ```bash
    chmod +x deploy.sh
    ./deploy.sh
    ```
 
+## Architecture
+
+- Express server handling Snapshot webhooks
+- MongoDB for proposal state persistence
+- Viem for blockchain event monitoring
+- Neynar SDK for Farcaster interactions
+- Node-cron for scheduled tasks
+
+## Monitoring
+
+- Health check endpoint available at `/health`
+- Docker logs accessible via `docker logs dao-bot`
+- MongoDB collections for proposal tracking
+
+## Troubleshooting
+
+- **Q: Bot not receiving Snapshot updates?**
+  - Ensure webhook endpoints are properly configured in Snapshot
+  - Check MongoDB connection
+  - Verify webhook route accessibility
+
+- **Q: Missing blockchain events?**
+  - Verify Alchemy API key
+  - Check contract addresses in environment variables
+  - Ensure proper network connectivity
+
+- **Q: Farcaster posts not appearing?**
+  - Verify Neynar API key
+  - Check signer approval status
+  - Confirm SIGNER_UUID in environment variables
+
 ## License
 
-`gm_bot` is released under the MIT License. This license permits free use, modification, and distribution of the software, with the requirement that the original copyright and license notice are included in any substantial portion of the work.
-
-## FAQs/Troubleshooting
-
-- **Q1**: What if `gm_bot` stops sending messages?
-  - **A1**: Check the logs for any errors and ensure your system's time settings align with the specified `TIME_ZONE`, also ensure that the process is running.
+Released under the MIT License. See LICENSE file for details.

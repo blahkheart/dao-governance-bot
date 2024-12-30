@@ -6,7 +6,7 @@
   "scripts": {
     "watch": "tsc --watch",
     "build": "rm -rf dist && tsc",
-    "start": "npm run build && node dist/app.js",
+    "start": "npm run build && node dist/index.js",
     "start:gov": "ts-node src/index.ts",
     "start:prod": "node dist/index.js",
     "get-approved-signer": "ts-node src/getApprovedSigner.ts"
