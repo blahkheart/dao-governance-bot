@@ -1,7 +1,6 @@
-version: '3.8'
-
 services:
   app:
+    container_name: dao-governance-bot
     build: .
     ports:
       - "3000:3000"
@@ -12,5 +11,5 @@ services:
       - FARCASTER_BOT_MNEMONIC=${FARCASTER_BOT_MNEMONIC}
       - SIGNER_UUID=${SIGNER_UUID}
       - ALCHEMY_API_KEY=${ALCHEMY_API_KEY}
-      - GOVERNANCE_CONTRACT_ADDRESS=${GOVERNANCE_CONTRACT_ADDRESS}
+      - DAO_GOVERNOR_ADDRESS=${DAO_GOVERNOR_ADDRESS}
       - ERC20_ADDRESS=${ERC20_ADDRESS}

@@ -43,7 +43,7 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
     }
   });
 
-  // Watch for Transfer events  
+  // Watch for Transfer events on erc20 token 
   client.watchContractEvent({
     address: ERC20_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,

@@ -10,34 +10,40 @@ if (!MONGODB_URI) {
 }
 
 async function main() {
-    // Connect to MongoDB
-    try { 
-        await mongoose.connect(MONGODB_URI);
-        console.log('Connected to MongoDB');
-    } catch (e) {
-        throw new Error('Failed to connect to MongoDB');
-    }
+    // Connect to MongoDB with retry logic
+    const connectWithRetry = async () => {
+        try {
+            await mongoose.connect(MONGODB_URI);
+            console.log('Connected to MongoDB');
+        } catch (err) {
+            console.error('Failed to connect to MongoDB. Retrying in 5 seconds...', err);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            return connectWithRetry();
+        }
+    };
 
-  const app = express();
-  app.use(express.json());
+    await connectWithRetry();
 
-  // Create Farcaster bot
-  const farcasterBot = createFarcasterBot();
+    const app = express();
+    app.use(express.json());
 
-  // Setup webhook endpoints
-  setupSnapshotWebhooks(app, farcasterBot);
+    // Create Farcaster bot
+    const farcasterBot = createFarcasterBot();
 
-  // Start blockchain event watchers
-  await watchGovernorContract(farcasterBot);
+    // Setup webhook endpoints
+    setupSnapshotWebhooks(app, farcasterBot);
 
-  // Health check endpoint  
-  app.get('/health', async (req, res) => {
-    res.status(200).send('OK');
-  });
+    // Start blockchain event watchers
+    await watchGovernorContract(farcasterBot);
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+    // Health check endpoint  
+    app.get('/health', async (req, res) => {
+        res.status(200).send('OK');
+    });
+
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
 }
 
 main().catch(console.error);
