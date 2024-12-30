@@ -1,7 +1,7 @@
-// src/daoGovernorWatcher.ts
 import { createPublicClient, webSocket } from 'viem';
 import { mainnet } from 'viem/chains';
-import { DAO_GOVERNOR_ABI, DAO_GOVERNOR_ADDRESS, ERC20_ADDRESS, ERC20_ABI } from './config'; 
+import { DAO_GOVERNOR_ADDRESS, ERC20_ADDRESS } from './config'; 
+import { DAO_GOVERNOR_ABI, ERC20_ABI } from './abi';
 import { WS_RPC_URL } from './constants';
 import {
   handleProposalCreated,
@@ -43,11 +43,23 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
     }
   });
 
-  // Watch for ProposalCreated events
+  // Watch for Transfer events  
   client.watchContractEvent({
     address: ERC20_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
     eventName: 'Transfer',
+    onLogs: async (logs: any[]) => {
+      for (const log of logs) {
+        console.log(log);
+      }
+    },
+  });
+  
+  // Watch for ProposalCreated events
+  client.watchContractEvent({
+    address: DAO_GOVERNOR_ADDRESS as `0x${string}`,
+    abi: DAO_GOVERNOR_ABI,
+    eventName: 'ProposalCreated',
     onLogs: async (logs: any[]) => {
       for (const log of logs) {
         const {

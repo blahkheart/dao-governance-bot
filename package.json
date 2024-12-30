@@ -1,17 +1,17 @@
 {
   "name": "dao_governance_bot",
   "version": "1.0.0",
-  "description": "A bot that will cast a 'gm 🪐' message in Warpcast at scheduled time everyday (As long as system is online)",
+  "description": "A bot that will cast a message in Warpcast when a proposal is created, queued or executed (As long as system is online)",
   "main": "./dist/app.js",
   "scripts": {
     "watch": "tsc --watch",
     "build": "rm -rf dist && tsc",
     "start": "npm run build && node dist/app.js",
-    "start:gov": "ts-node src/startAgent.ts",
+    "start:gov": "ts-node src/index.ts",
     "start:prod": "node dist/index.js",
-    "get-approved-signer": "ts-node getApprovedSigner.ts"
+    "get-approved-signer": "ts-node src/getApprovedSigner.ts"
   },
-  "author": "Neynar",
+  "author": "Danny Thomx",
   "license": "MIT",
   "dependencies": {
     "@neynar/nodejs-sdk": "^2.7.0",
