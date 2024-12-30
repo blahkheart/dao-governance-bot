@@ -19,28 +19,33 @@ export async function handleProposalCreated(
     endBlock: number;
   }
 ) {
-  const { proposalId, proposer, startBlock, endBlock } = eventData;
-  const currentBlock = await client.getBlockNumber();
+  try {
+    const { proposalId, proposer, startBlock, endBlock } = eventData;
+    const currentBlock = await client.getBlockNumber();
 
-  await Proposal.create({
-    proposalId,
-    proposer,
-    startBlock,
-    endBlock,
-    currentBlock: Number(currentBlock),
-    status: 'created',
-    source: 'onchain',
-    space: 'unlock-protocol'
-  });
+    await Proposal.create({
+      proposalId,
+      proposer,
+      startBlock,
+      endBlock,
+      currentBlock: Number(currentBlock),
+      status: 'created',
+      source: 'onchain',
+      space: 'unlock-protocol'
+    });
 
-  const announcement = `📜 New Proposal Created!
+    const announcement = `📜 New Proposal Created!
 ID: ${proposalId}
 Proposer: ${proposer}
 Voting starts at block: ${startBlock}
 Voting ends at block: ${endBlock}
 Current block: ${currentBlock}`;
 
-  await farcasterBot.publishCast(announcement);
+    await farcasterBot.publishCast(announcement);
+  } catch (error) {
+    console.error('Error handling proposal creation:', error);
+    throw error;
+  }
 }
 
 /**
@@ -51,18 +56,22 @@ export async function handleProposalQueued(
   proposalId: string,
   eta: number
 ) {
-  // Update DB
-  await Proposal.findOneAndUpdate(
-    { proposalId },
-    { 
-      status: 'queued',
-      queuedTime: eta 
-    }
-  );
+  try {
+    await Proposal.findOneAndUpdate(
+      { proposalId },
+      { 
+        status: 'queued',
+        queuedTime: eta 
+      }
+    );
 
-  await farcasterBot.publishCast(
-    `⏳ Proposal ${proposalId} has been queued. Execution ETA: ${new Date(eta * 1000).toUTCString()}`
-  );
+    await farcasterBot.publishCast(
+      `⏳ Proposal ${proposalId} has been queued. Execution ETA: ${new Date(eta * 1000).toUTCString()}`
+    );
+  } catch (error) {
+    console.error('Error handling proposal queue:', error);
+    throw error;
+  }
 }
 
 /**
@@ -72,16 +81,20 @@ export async function handleProposalExecuted(
   farcasterBot: FarcasterBot,
   proposalId: string
 ) {
-  // Update MongoDB
-  await Proposal.findOneAndUpdate(
-    { proposalId },
-    { 
-      status: 'executed',
-      executedTime: Date.now() 
-    }
-  );
+  try {
+    await Proposal.findOneAndUpdate(
+      { proposalId },
+      { 
+        status: 'executed',
+        executedTime: Date.now() 
+      }
+    );
 
-  await farcasterBot.publishCast(
-    `✅ Proposal ${proposalId} has been executed!`
-  );
+    await farcasterBot.publishCast(
+      `✅ Proposal ${proposalId} has been executed!`
+    );
+  } catch (error) {
+    console.error('Error handling proposal execution:', error);
+    throw error;
+  }
 }
