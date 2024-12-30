@@ -7,12 +7,16 @@
     "sourceMap": true,
     "strict": true,
     "alwaysStrict": true,
-    "target": "es5",
+    "target": "es2016",
     "module": "CommonJS",
     "esModuleInterop": true,
     "moduleResolution": "node",
     "skipLibCheck": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

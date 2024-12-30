@@ -67,6 +67,18 @@ Press "Write" to execute the transaction. This will create a signer for your mne
 
 3. **Stopping the Bot**: If you need to stop the bot, kill the instance.
 
+4. **Run the app for local development**: Launch the bot using the following command:
+
+   ```bash
+   docker-compose up --build
+   ```
+5. **For production**: Launch the bot using the following command:
+
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+
 ## License
 
 `gm_bot` is released under the MIT License. This license permits free use, modification, and distribution of the software, with the requirement that the original copyright and license notice are included in any substantial portion of the work.

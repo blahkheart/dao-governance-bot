@@ -1,2 +1,2 @@
-import { getApprovedSigner } from "./src/utils";
+import { getApprovedSigner } from "./utils";
 getApprovedSigner();

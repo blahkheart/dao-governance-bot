@@ -1,5 +1,5 @@
 {
-  "name": "gm_bot",
+  "name": "dao_governance_bot",
   "version": "1.0.0",
   "description": "A bot that will cast a 'gm 🪐' message in Warpcast at scheduled time everyday (As long as system is online)",
   "main": "./dist/app.js",
@@ -7,13 +7,19 @@
     "watch": "tsc --watch",
     "build": "rm -rf dist && tsc",
     "start": "npm run build && node dist/app.js",
+    "start:gov": "ts-node src/startAgent.ts",
+    "start:prod": "node dist/index.js",
     "get-approved-signer": "ts-node getApprovedSigner.ts"
   },
   "author": "Neynar",
   "license": "MIT",
   "dependencies": {
     "@neynar/nodejs-sdk": "^2.7.0",
+    "@types/express": "^5.0.0",
+    "@types/mongoose": "^5.11.97",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.2",
     "node-cron": "^3.0.3",
     "typescript": "^5.7.2",
     "viem": "^2.21.57"

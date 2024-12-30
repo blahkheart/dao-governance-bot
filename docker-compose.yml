@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - PORT=3000
+      - NEYNAR_API_KEY=${NEYNAR_API_KEY}
+      - FARCASTER_BOT_MNEMONIC=${FARCASTER_BOT_MNEMONIC}
+      - SIGNER_UUID=${SIGNER_UUID}
+      - ALCHEMY_API_KEY=${ALCHEMY_API_KEY}
+      - GOVERNANCE_CONTRACT_ADDRESS=${GOVERNANCE_CONTRACT_ADDRESS}
+      - ERC20_ADDRESS=${ERC20_ADDRESS}
