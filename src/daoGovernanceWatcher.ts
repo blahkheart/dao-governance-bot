@@ -11,6 +11,8 @@ import {
 import { FarcasterBot } from './agent';
 import { Proposal } from './models/Proposal';
 
+const WATCH_ADDRESS = '0xa0c03bE2Cf62f171e29e0d8766677cF4c50d58F8';
+
 export async function watchGovernorContract(farcasterBot: FarcasterBot) {
   const client = createPublicClient({
     chain: mainnet,
@@ -52,6 +54,9 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
     address: ERC20_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
     eventName: 'Transfer',
+    args: {
+      from: WATCH_ADDRESS
+    },
     onLogs: async (logs: any[]) => {
       for (const log of logs) {
         console.log(log);
