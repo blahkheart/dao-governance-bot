@@ -17,8 +17,11 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
     transport: webSocket(WS_RPC_URL),
   });
 
+  // Store unwatch functions
+  const unwatchFunctions: (() => void)[] = [];
+
   // Watch for new blocks to track proposal status changes
-  client.watchBlocks({
+  const unwatchBlocks = client.watchBlocks({
     onBlock: async (block) => {
       const currentBlock = block.number;
       const proposals = await Proposal.find({
@@ -42,9 +45,10 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
       }
     }
   });
+  unwatchFunctions.push(unwatchBlocks);
 
   // Watch for Transfer events on erc20 token 
-  client.watchContractEvent({
+  const unwatchTransfers = client.watchContractEvent({
     address: ERC20_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
     eventName: 'Transfer',
@@ -54,9 +58,10 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
       }
     },
   });
-  
+  unwatchFunctions.push(unwatchTransfers);
+
   // Watch for ProposalCreated events
-  client.watchContractEvent({
+  const unwatchProposalCreated = client.watchContractEvent({
     address: DAO_GOVERNOR_ADDRESS as `0x${string}`,
     abi: DAO_GOVERNOR_ABI,
     eventName: 'ProposalCreated',
@@ -83,9 +88,10 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
       }
     },
   });
+  unwatchFunctions.push(unwatchProposalCreated);
 
   // Watch for ProposalQueued events
-  client.watchContractEvent({
+  const unwatchProposalQueued = client.watchContractEvent({
     address: DAO_GOVERNOR_ADDRESS as `0x${string}`,
     abi: DAO_GOVERNOR_ABI,
     eventName: 'ProposalQueued',
@@ -99,9 +105,10 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
       }
     },
   });
+  unwatchFunctions.push(unwatchProposalQueued);
 
   // Watch for ProposalExecuted events
-  client.watchContractEvent({
+  const unwatchProposalExecuted = client.watchContractEvent({
     address: DAO_GOVERNOR_ADDRESS as `0x${string}`,
     abi: DAO_GOVERNOR_ABI,
     eventName: 'ProposalExecuted',
@@ -112,4 +119,17 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
       }
     },
   });
+  unwatchFunctions.push(unwatchProposalExecuted);
+
+  // Cleanup function
+  const cleanup = () => {
+    // Unwatch all event subscriptions
+    unwatchFunctions.forEach(unwatch => unwatch());
+  };
+
+  // Handle process termination
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
+  return cleanup;
 }

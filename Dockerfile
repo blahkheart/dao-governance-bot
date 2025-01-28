@@ -14,6 +14,9 @@ COPY . .
 # Build TypeScript
 RUN yarn build
 
+# Set Node options for increased memory
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Environment variables
 ENV NODE_ENV=production
 ENV PORT=3000

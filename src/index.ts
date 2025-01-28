@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import mongoose from 'mongoose';
 import { createFarcasterBot } from './agent';
 import { watchGovernorContract } from './daoGovernanceWatcher';
@@ -10,6 +10,31 @@ if (!MONGODB_URI) {
 }
 
 async function main() {
+    let cleanup: (() => void) | undefined;
+    
+    // Handle process termination
+    const handleShutdown = async () => {
+        console.log('Received shutdown signal, cleaning up...');
+        
+        // Call the cleanup function
+        if (cleanup) {
+            cleanup();
+        }
+        
+        // Close MongoDB connection
+        try {
+            await mongoose.connection.close();
+            console.log('MongoDB connection closed');
+        } catch (err) {
+            console.error('Error closing MongoDB connection:', err);
+        }
+        
+        process.exit(0);
+    };
+
+    process.on('SIGINT', handleShutdown);
+    process.on('SIGTERM', handleShutdown);
+
     // Connect to MongoDB with retry logic
     const connectWithRetry = async () => {
         try {
@@ -33,8 +58,8 @@ async function main() {
     // Setup webhook endpoints
     setupSnapshotWebhooks(app, farcasterBot);
 
-    // Start blockchain event watchers
-    await watchGovernorContract(farcasterBot);
+    // Start blockchain event watchers and store cleanup function
+    cleanup = await watchGovernorContract(farcasterBot);
 
     // Health check endpoint  
     app.get('/health', async (req, res) => {
