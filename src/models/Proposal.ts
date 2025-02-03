@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-interface IProposal {
+export interface IProposal {
   proposalId: string;
   space?: string;
   proposer?: string;

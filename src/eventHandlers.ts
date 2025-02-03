@@ -1,9 +1,10 @@
 // src/eventHandlers.ts
 import { FarcasterBot } from './agent';
-import { Proposal } from './models/Proposal';
+import { Proposal, IProposal } from './models/Proposal';
 import { createPublicClient, http } from 'viem';
 import { mainnet } from 'viem/chains';
 import { WS_RPC_URL } from './constants';
+import { logger } from './utils/logger';
 
 const client = createPublicClient({
   chain: mainnet,
@@ -17,33 +18,50 @@ export async function handleProposalCreated(
     proposer: string;
     startBlock: number;
     endBlock: number;
-  }
+  },
+  isHistorical = false
 ) {
   try {
-    const { proposalId, proposer, startBlock, endBlock } = eventData;
+    const { proposalId } = eventData;
+    
+    // Check if proposal already exists
+    const existingProposal = await Proposal.findOne({ proposalId });
+    if (existingProposal) {
+      logger.debug(`Proposal ${proposalId} already processed, skipping`);
+      return;
+    }
+
     const currentBlock = await client.getBlockNumber();
 
     await Proposal.create({
-      proposalId,
-      proposer,
-      startBlock,
-      endBlock,
+      ...eventData,
       currentBlock: Number(currentBlock),
       status: 'created',
       source: 'onchain',
       space: 'unlock-protocol'
     });
 
-    const announcement = `📜 New Proposal Created!
-ID: ${proposalId}
-Proposer: ${proposer}
-Voting starts at block: ${startBlock}
-Voting ends at block: ${endBlock}
-Current block: ${currentBlock}`;
+    const missedProposalAnnouncement = `📜 [Historical] Missed Proposal Alert! 
+        Proposal ID: ${proposalId}
+        Proposer: ${eventData.proposer}
+        Voting started at block: ${eventData.startBlock}
+        Voting ended at block: ${eventData.endBlock}
 
-    await farcasterBot.publishCast(announcement);
+        This proposal went live while I was asleep... Catching up now so everyone stays informed! #DAOHistory`;
+    
+    const realTimeProposalAnnouncement = `📜 New Proposal Created!
+        ID: ${proposalId}
+        Proposer: ${eventData.proposer}
+        Voting starts at block: ${eventData.startBlock}
+        Voting ends at block: ${eventData.endBlock}
+        Current block: ${currentBlock}`;
+
+      const announcement = isHistorical ? missedProposalAnnouncement : realTimeProposalAnnouncement;
+
+      await farcasterBot.publishCast(announcement);
+    
   } catch (error) {
-    console.error('Error handling proposal creation:', error);
+    logger.error('Error handling proposal creation:', error);
     throw error;
   }
 }
@@ -54,18 +72,20 @@ Current block: ${currentBlock}`;
 export async function handleProposalQueued(
   farcasterBot: FarcasterBot,
   proposalId: string,
-  eta: number
+  eta: number, 
+  isHistorical = false
 ) {
   try {
+    const updateData = {
+      status: 'queued',
+      ...(isHistorical ? {} : { queuedTime: Date.now(), executionETA: eta })
+    };
     await Proposal.findOneAndUpdate(
       { proposalId },
-      { 
-        status: 'queued',
-        queuedTime: eta 
-      }
+      updateData
     );
 
-    await farcasterBot.publishCast(
+    !isHistorical && await farcasterBot.publishCast(
       `⏳ Proposal ${proposalId} has been queued. Execution ETA: ${new Date(eta * 1000).toUTCString()}`
     );
   } catch (error) {
@@ -79,22 +99,25 @@ export async function handleProposalQueued(
  */
 export async function handleProposalExecuted(
   farcasterBot: FarcasterBot,
-  proposalId: string
+  proposalId: string,
+  isHistorical = false
 ) {
   try {
+    const updateData = {
+      status: 'executed',
+      ...(isHistorical ? {} : { executedTime: Date.now() })
+    };
+
     await Proposal.findOneAndUpdate(
       { proposalId },
-      { 
-        status: 'executed',
-        executedTime: Date.now() 
-      }
+      updateData
     );
 
     await farcasterBot.publishCast(
-      `✅ Proposal ${proposalId} has been executed!`
+     isHistorical ? `✅ Proposal ${proposalId} was executed successfully. #DAOHistory` : `✅ Proposal ${proposalId} has been executed!`
     );
   } catch (error) {
-    console.error('Error handling proposal execution:', error);
+    logger.error('Error handling proposal execution:', error);
     throw error;
   }
 }

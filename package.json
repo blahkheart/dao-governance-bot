@@ -17,12 +17,16 @@
     "@neynar/nodejs-sdk": "^2.7.0",
     "@types/express": "^5.0.0",
     "@types/mongoose": "^5.11.97",
+    "@types/ws": "^8.5.14",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "mongoose": "^8.9.2",
     "node-cron": "^3.0.3",
     "typescript": "^5.7.2",
-    "viem": "^2.21.57"
+    "viem": "^2.22.19",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

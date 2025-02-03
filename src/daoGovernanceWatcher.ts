@@ -1,28 +1,64 @@
-import { createPublicClient, webSocket } from 'viem';
-import { mainnet } from 'viem/chains';
-import { DAO_GOVERNOR_ADDRESS, ERC20_ADDRESS } from './config'; 
+import { Proposal } from './models/Proposal';
+import { DAO_GOVERNOR_ADDRESS, ERC20_ADDRESS, HISTORIC_EVENTS_START_BLOCK } from './config'; 
 import { DAO_GOVERNOR_ABI, ERC20_ABI } from './abi';
-import { WS_RPC_URL } from './constants';
 import {
   handleProposalCreated,
   handleProposalExecuted,
   handleProposalQueued,
 } from './eventHandlers';
 import { FarcasterBot } from './agent';
-import { Proposal } from './models/Proposal';
+import { WebSocketManager } from './services/WebSocketManager';
+import { withRetry } from './utils/retry';
+import { logger } from './utils/logger';
+import { HistoricalEventProcessor } from './services/HistoricalEventProcessor';
 
 const WATCH_ADDRESS = '0xa0c03bE2Cf62f171e29e0d8766677cF4c50d58F8';
 
 export async function watchGovernorContract(farcasterBot: FarcasterBot) {
-  const client = createPublicClient({
-    chain: mainnet,
-    transport: webSocket(WS_RPC_URL),
-  });
-
-  // Store unwatch functions
+  const wsManager = new WebSocketManager();
   const unwatchFunctions: (() => void)[] = [];
 
-  // Watch for new blocks to track proposal status changes
+  // Process historical events first
+  await processHistoricalEvents(wsManager, farcasterBot);
+
+  // Setup event handlers for WebSocket connection status
+  wsManager.on('connected', async () => {
+    logger.info('Setting up contract event watchers');
+    await setupEventWatchers(wsManager, farcasterBot, unwatchFunctions);
+  });
+
+  wsManager.on('disconnected', () => {
+    logger.warn('Cleaning up event watchers due to disconnection');
+    cleanup(unwatchFunctions);
+  });
+
+  wsManager.on('maxReconnectAttemptsReached', () => {
+    logger.error('Failed to maintain WebSocket connection');
+    process.exit(1); // Or implement your preferred failure handling
+  });
+
+  // Cleanup function
+  const cleanup = (unwatchFns: (() => void)[]) => {
+    unwatchFns.forEach(unwatch => unwatch());
+    unwatchFns.length = 0; // Clear the array
+    wsManager.cleanup();
+  };
+
+  // Handle process termination
+  process.on('SIGINT', () => cleanup(unwatchFunctions));
+  process.on('SIGTERM', () => cleanup(unwatchFunctions));
+
+  return () => cleanup(unwatchFunctions);
+}
+
+async function setupEventWatchers(
+  wsManager: WebSocketManager,
+  farcasterBot: FarcasterBot,
+  unwatchFunctions: (() => void)[]
+) {
+  const client = wsManager.getClient();
+
+    // Watch for new blocks to track proposal status changes
   const unwatchBlocks = client.watchBlocks({
     onBlock: async (block) => {
       const currentBlock = block.number;
@@ -49,6 +85,38 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
   });
   unwatchFunctions.push(unwatchBlocks);
 
+  // Watch for ProposalCreated events
+  const unwatchProposalCreated = client.watchContractEvent({
+    address: DAO_GOVERNOR_ADDRESS as `0x${string}`,
+    abi: DAO_GOVERNOR_ABI,
+    eventName: 'ProposalCreated',
+    onLogs: async (logs: any[]) => {
+      for (const log of logs) {
+        await withRetry(async () => {
+          const {
+            proposalId,
+            proposer,
+            startBlock,
+            endBlock
+          } = log.args as {
+            proposalId: bigint;
+            proposer: `0x${string}`;
+            startBlock: bigint;
+            endBlock: bigint;
+          };
+
+          await handleProposalCreated(farcasterBot, {
+            proposalId: proposalId.toString(),
+            proposer,
+            startBlock: Number(startBlock),
+            endBlock: Number(endBlock),
+          });
+        });
+      }
+    },
+  });
+  unwatchFunctions.push(unwatchProposalCreated);
+
   // Watch for Transfer events on erc20 token 
   const unwatchTransfers = client.watchContractEvent({
     address: ERC20_ADDRESS as `0x${string}`,
@@ -64,36 +132,6 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
     },
   });
   unwatchFunctions.push(unwatchTransfers);
-
-  // Watch for ProposalCreated events
-  const unwatchProposalCreated = client.watchContractEvent({
-    address: DAO_GOVERNOR_ADDRESS as `0x${string}`,
-    abi: DAO_GOVERNOR_ABI,
-    eventName: 'ProposalCreated',
-    onLogs: async (logs: any[]) => {
-      for (const log of logs) {
-        const {
-          proposalId,
-          proposer,
-          startBlock,
-          endBlock  
-        } = log.args as {
-          proposalId: bigint;
-          proposer: `0x${string}`;
-          startBlock: bigint;
-          endBlock: bigint;
-        };
-
-        await handleProposalCreated(farcasterBot, {
-          proposalId: proposalId.toString(),
-          proposer,
-          startBlock: Number(startBlock),
-          endBlock: Number(endBlock),
-        });
-      }
-    },
-  });
-  unwatchFunctions.push(unwatchProposalCreated);
 
   // Watch for ProposalQueued events
   const unwatchProposalQueued = client.watchContractEvent({
@@ -125,16 +163,60 @@ export async function watchGovernorContract(farcasterBot: FarcasterBot) {
     },
   });
   unwatchFunctions.push(unwatchProposalExecuted);
+}
 
-  // Cleanup function
-  const cleanup = () => {
-    // Unwatch all event subscriptions
-    unwatchFunctions.forEach(unwatch => unwatch());
-  };
+async function processHistoricalEvents(
+  wsManager: WebSocketManager,
+  farcasterBot: FarcasterBot
+) {
+  const client = wsManager.getClient();
+  const processor = new HistoricalEventProcessor(
+    client,
+    Number(HISTORIC_EVENTS_START_BLOCK), // You can set this to the deployment block of your contract
+    DAO_GOVERNOR_ADDRESS as `0x${string}`,
+    DAO_GOVERNOR_ABI
+  );
 
-  // Handle process termination
-  process.on('SIGINT', cleanup);
-  process.on('SIGTERM', cleanup);
+  // Process historical ProposalCreated events
+  await processor.processHistoricalEvents('ProposalCreated', async (logs) => {
+    for (const log of logs) {
+      const {
+        proposalId,
+        proposer,
+        startBlock,
+        endBlock
+      } = log.args as {
+        proposalId: bigint;
+        proposer: `0x${string}`;
+        startBlock: bigint;
+        endBlock: bigint;
+      };
 
-  return cleanup;
+      await handleProposalCreated(farcasterBot, {
+        proposalId: proposalId.toString(),
+        proposer,
+        startBlock: Number(startBlock),
+        endBlock: Number(endBlock),
+      }, true);
+    }
+  });
+
+  // Process historical ProposalQueued events
+  await processor.processHistoricalEvents('ProposalQueued', async (logs) => {
+    for (const log of logs) {
+      const { proposalId, eta } = log.args as {
+        proposalId: bigint;
+        eta: bigint;
+      };
+      await handleProposalQueued(farcasterBot, proposalId.toString(), Number(eta), true);
+    }
+  });
+
+  // Process historical ProposalExecuted events
+  await processor.processHistoricalEvents('ProposalExecuted', async (logs) => {
+    for (const log of logs) {
+      const { proposalId } = log.args as { proposalId: bigint };
+      await handleProposalExecuted(farcasterBot, proposalId.toString(), true);
+    }
+  });
 }
