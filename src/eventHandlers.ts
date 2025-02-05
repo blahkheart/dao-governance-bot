@@ -1,17 +1,10 @@
-// src/eventHandlers.ts
 import { FarcasterBot } from './agent';
-import { Proposal, IProposal } from './models/Proposal';
-import { createPublicClient, http } from 'viem';
-import { mainnet } from 'viem/chains';
-import { WS_RPC_URL } from './constants';
+import { Proposal } from './models/Proposal';
+import { WebSocketManager } from './services/WebSocketManager';
 import { logger } from './utils/logger';
 
-const client = createPublicClient({
-  chain: mainnet,
-  transport: http(WS_RPC_URL)
-});
-
 export async function handleProposalCreated(
+  wsManager: WebSocketManager,
   farcasterBot: FarcasterBot,
   eventData: {
     proposalId: string;
@@ -31,15 +24,17 @@ export async function handleProposalCreated(
       return;
     }
 
-    const currentBlock = await client.getBlockNumber();
+    const currentBlock = await wsManager.getClient().getBlockNumber();
 
-    await Proposal.create({
+    const proposal = await Proposal.create({
       ...eventData,
       currentBlock: Number(currentBlock),
       status: 'created',
       source: 'onchain',
       space: 'unlock-protocol'
     });
+
+    logger.info(`Proposal ${proposalId} stored in database`, { proposal });
 
     const missedProposalAnnouncement = `📜 [Historical] Missed Proposal Alert! 
         Proposal ID: ${proposalId}
@@ -58,7 +53,9 @@ export async function handleProposalCreated(
 
       const announcement = isHistorical ? missedProposalAnnouncement : realTimeProposalAnnouncement;
 
-      await farcasterBot.publishCast(announcement);
+    const castResponse = await farcasterBot.publishCast(announcement);
+
+    logger.info(`Proposal ${proposalId} cast published`, { castResponse });
     
   } catch (error) {
     logger.error('Error handling proposal creation:', error);
@@ -114,7 +111,7 @@ export async function handleProposalExecuted(
     );
 
     await farcasterBot.publishCast(
-     isHistorical ? `✅ Proposal ${proposalId} was executed successfully. #DAOHistory` : `✅ Proposal ${proposalId} has been executed!`
+     isHistorical ? `📜 [Historical] Proposal ${proposalId} was executed successfully. #DAOHistory` : `✅ Proposal ${proposalId} has been executed!`
     );
   } catch (error) {
     logger.error('Error handling proposal execution:', error);
