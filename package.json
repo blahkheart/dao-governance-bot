@@ -11,6 +11,7 @@
     "start:prod": "node dist/index.js",
     "get-approved-signer": "ts-node src/getApprovedSigner.ts",
     "view:casts": "ts-node src/utils/viewCasts.ts",
+    "get:logs": "ts-node src/utils/getTransactionLogs.ts",
     "delete:cast":"ts-node src/utils/deleteBotCast.ts"
   },
   "author": "Danny Thomx",

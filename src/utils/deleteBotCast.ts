@@ -41,7 +41,7 @@ export async function deleteBotCastViaApi(castHash: string): Promise<boolean> {
 }
 
 
-async function deleteCast(castHash: string) {  
+export async function deleteCast(castHash: string) {  
   try {
     // Get signer's FID first
     const signer = await neynarClient.lookupSigner({ signerUuid: SIGNER_UUID });

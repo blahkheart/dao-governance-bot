@@ -4,8 +4,8 @@ export interface IProposal {
   proposalId: string;
   space?: string;
   proposer?: string;
-  startBlock: number;
-  endBlock: number;
+  voteStart: number;
+  voteEnd: number;
   currentBlock: number;
   queuedTime?: number;
   executedTime?: number;
@@ -13,14 +13,15 @@ export interface IProposal {
   status: 'created' | 'active' | 'ended' | 'queued' | 'executed';
   source: 'snapshot' | 'onchain';
   createdAt: Date;
+  isCasted: boolean;
 }
 
 const ProposalSchema = new mongoose.Schema<IProposal>({
   proposalId: { type: String, required: true, unique: true },
   space: { type: String },
   proposer: { type: String },
-  startBlock: { type: Number },
-  endBlock: { type: Number },
+  voteStart: { type: Number },
+  voteEnd: { type: Number },
   currentBlock: { type: Number },
   queuedTime: { type: Number },
   executedTime: { type: Number },
@@ -35,6 +36,7 @@ const ProposalSchema = new mongoose.Schema<IProposal>({
     enum: ['snapshot', 'onchain'],
     required: true
   },
+  isCasted: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

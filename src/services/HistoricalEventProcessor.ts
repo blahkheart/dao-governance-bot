@@ -9,6 +9,8 @@ import {
 import { ProcessedBlock } from '../models/ProcessedBlock';
 import { logger } from '../utils/logger';
 import { withRetry } from '../utils/retry';
+import { decodeLogData, extractLogProperties } from '../utils/getTransactionLogs';
+
 
 interface BatchProcessingMetrics {
   fromBlock: number;
@@ -35,7 +37,7 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
 
   constructor(
     private readonly client: PublicClient,
-    private readonly startBlock: number,
+    private readonly voteStart: number,
     private readonly contractAddress: Address,
     private readonly abi: TAbi
   ) {
@@ -63,17 +65,16 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
     return withRetry(() => this.client.getLogs(params));
   }
 
-  private async updateProcessedBlock(
-    eventType: string,
-    blockNumber: number
-  ): Promise<void> {
+  private async updateProcessedBlock(eventName: string, blockNumber: number): Promise<void> {
     await ProcessedBlock.findOneAndUpdate(
-      { eventType },
-      {
-        lastProcessedBlock: blockNumber,
-        updatedAt: new Date(),
+      { 
+        eventType: eventName,
+        'metadata.eventHash': { $exists: true }  // Only update records with an event hash
       },
-      { upsert: true }
+      {
+        $set: { lastProcessedBlock: blockNumber }
+      },
+      { upsert: false }  // Don't create new records here
     );
   }
 
@@ -88,6 +89,46 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
       processingTime: metrics.processingTime,
     });
   }
+    
+  private async isEventProcessed(
+    eventType: string,
+    eventHash: string,
+    proposalId?: string
+  ): Promise<boolean> {
+    const processed = await ProcessedBlock.findOne({
+      eventType,
+      'metadata.eventHash': eventHash,
+      'metadata.isCasted': true
+    });
+    return !!processed;
+  }
+
+  private async markEventProcessed(
+    eventType: string,
+    blockNumber: number,
+    metadata: {
+      eventHash: string;
+      proposalId?: string;
+      status?: string;
+    }
+  ): Promise<void> {
+    await ProcessedBlock.findOneAndUpdate(
+      { 
+        eventType,
+        'metadata.eventHash': metadata.eventHash
+      },
+      {
+        $set: {
+          lastProcessedBlock: blockNumber,
+          metadata: {
+            ...metadata,
+            isCasted: true
+          }
+        }
+      },
+      { upsert: true }
+    );
+  }
 
   async processHistoricalEvents<TEventName extends string>(
     eventName: TEventName,
@@ -96,7 +137,7 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
     const lastProcessed = await ProcessedBlock.findOne({
       eventType: eventName,
     });
-    const fromBlock = lastProcessed?.lastProcessedBlock || this.startBlock;
+    const fromBlock = lastProcessed?.lastProcessedBlock || this.voteStart;
     const currentBlock = Number(await this.client.getBlockNumber());
 
     logger.info(`Processing historical ${eventName} events`, {
@@ -105,7 +146,7 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
       batchSize: this.batchSize,
     });
 
-    for (let from = fromBlock; from <= currentBlock; ) {
+ for (let from = fromBlock; from <= currentBlock; ) {
       const to = Math.min(from + this.batchSize - 1, currentBlock);
       const startTime = Date.now();
 
@@ -116,22 +157,66 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
           toBlock: BigInt(to),
         });
 
-        if (logs.length > 0) {
-          await processor(logs);
+        for (const log of logs) {
+            const eventHash = `${log.transactionHash}-${log.logIndex}`;
+            const properties = extractLogProperties(log, ['proposalId']);
+            const proposalId = properties?.proposalId?.toString();
+
+            // Check if this event was already processed
+            if (await this.isEventProcessed(eventName, eventHash, proposalId)) {
+                logger.debug(`Event ${eventHash} already processed, skipping`);
+                continue;
+            }
+
+          try {
+            await processor([log]);
+            
+            // Mark event as processed after successful processing
+            await this.markEventProcessed(eventName, Number(to), {
+              eventHash,
+              proposalId,
+              status: 'processed'
+            });
+          } catch (error) {
+            logger.error(`Error processing individual event`, {
+              eventHash,
+              proposalId,
+              error: (error as Error).message
+            });
+            
+            // Update ProcessedBlock with error information
+            await ProcessedBlock.findOneAndUpdate(
+              { 
+                eventType: eventName,
+                'metadata.eventHash': eventHash
+              },
+              {
+                $push: {
+                  'metadata.processingErrors': {
+                    blockNumber: Number(log.blockNumber),
+                    error: (error as Error).message,
+                    timestamp: new Date()
+                  }
+                }
+              },
+              { upsert: true }
+            );
+          }
         }
 
+        // Update the last processed block
         await this.updateProcessedBlock(eventName, to);
 
         const processingTime = Date.now() - startTime;
+        // Adjust batch size based on processing time
         this.adjustBatchSize(processingTime);
-
+        // Log batch metrics
         this.logBatchMetrics(eventName, {
           fromBlock: from,
           toBlock: to,
           eventsCount: logs.length,
-          processingTime,
+          processingTime
         });
-
         from = to + 1;
       } catch (error) {
         // Reduce batch size on error and retry
@@ -171,11 +256,11 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
     const currentBlock = Number(await this.client.getBlockNumber());
 
     return {
-      lastProcessedBlock: lastProcessed?.lastProcessedBlock || this.startBlock,
+      lastProcessedBlock: lastProcessed?.lastProcessedBlock || this.voteStart,
       currentBlock,
       remaining:
         currentBlock -
-        (lastProcessed?.lastProcessedBlock || this.startBlock),
+        (lastProcessed?.lastProcessedBlock || this.voteStart),
     };
   }
 }

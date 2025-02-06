@@ -11,7 +11,8 @@ import { WebSocketManager } from './services/WebSocketManager';
 import { withRetry } from './utils/retry';
 import { logger } from './utils/logger';
 import { HistoricalEventProcessor } from './services/HistoricalEventProcessor';
-import { Abi, decodeEventLog } from 'viem';
+import { Abi } from 'viem';
+import { decodeLogData, extractLogProperties } from './utils/getTransactionLogs';
 const WATCH_ADDRESS = '0xa0c03bE2Cf62f171e29e0d8766677cF4c50d58F8';
 
 export async function watchGovernorContract(farcasterBot: FarcasterBot) {
@@ -61,14 +62,14 @@ async function setupEventWatchers(
       });
 
       for (const proposal of proposals) {
-        if (proposal.status === 'created' && currentBlock >= proposal.startBlock) {
+        if (proposal.status === 'created' && currentBlock >= proposal.voteStart) {
           await Proposal.findByIdAndUpdate(proposal._id, { status: 'active' });
           await farcasterBot.publishCast(
             `🗳️ Voting is now active for proposal ${proposal.proposalId}!\n` +
-            `Voting ends at block ${proposal.endBlock}`
+            `Voting ends at block ${proposal.voteEnd}`
           );
         }
-        else if (proposal.status === 'active' && currentBlock >= proposal.endBlock) {
+        else if (proposal.status === 'active' && currentBlock >= proposal.voteEnd) {
           await Proposal.findByIdAndUpdate(proposal._id, { status: 'ended' });
           await farcasterBot.publishCast(
             `🏁 Voting has ended for proposal ${proposal.proposalId}`
@@ -87,24 +88,23 @@ async function setupEventWatchers(
     onLogs: async (logs: any[]) => {
       for (const log of logs) {
         await withRetry(async () => {
-          const {
-            proposalId,
-            proposer,
-            startBlock,
-            endBlock
-          } = log.args as {
-            proposalId: bigint;
-            proposer: `0x${string}`;
-            startBlock: bigint;
-            endBlock: bigint;
-          };
+          const decodedData = decodeLogData(log);
+          
+          if (decodedData.decoded && decodedData.eventName === 'ProposalCreated') {
+            const {
+              proposalId,
+              proposer,
+              voteStart,
+              voteEnd
+            } = extractLogProperties(log, ['proposalId', 'proposer', 'voteStart', 'voteEnd']) || {};
 
-          await handleProposalCreated(wsManager, farcasterBot, {
-            proposalId: proposalId.toString(),
-            proposer,
-            startBlock: Number(startBlock),
-            endBlock: Number(endBlock),
-          });
+            await handleProposalCreated(wsManager, farcasterBot, {
+              proposalId: proposalId.toString(),
+              proposer,
+              voteStart: Number(voteStart),
+              voteEnd: Number(voteEnd)
+            });
+          }
         });
       }
     },
@@ -153,11 +153,14 @@ async function setupEventWatchers(
     eventName: 'ProposalQueued',
     onLogs: async (logs: any[]) => {
       for (const log of logs) {
-        const { proposalId, eta } = log.args as {
-          proposalId: bigint;
-          eta: bigint;
-        };
-        await handleProposalQueued(farcasterBot, proposalId.toString(), Number(eta));
+        await withRetry(async () => {
+          const decodedData = decodeLogData(log);
+          
+          if (decodedData.decoded && decodedData.eventName === 'ProposalQueued') {
+            const { proposalId, eta } = extractLogProperties(log, ['proposalId', 'eta']) || {};
+            await handleProposalQueued(farcasterBot, proposalId.toString(), Number(eta));
+          }
+        });
       }
     },
   });
@@ -193,56 +196,52 @@ async function processHistoricalEvents(
   // Generic function to process event logs
   const processLogs = async <TEventName extends string>(
     eventName: TEventName,
-    handler: (decodedArgs: any) => Promise<void>
+    handler: (decodedArgs: any, eventHash: string) => Promise<void>
   ) => {
     await processor.processHistoricalEvents(eventName, async (logs) => {
       for (const log of logs) {
         try {
-          const decodedLog = decodeEventLog({
-            abi: DAO_GOVERNOR_ABI,
-            eventName,
-            data: log.data,
-            topics: log.topics,
-          });
-
-          await handler(decodedLog.args); // ✅ Now passing decoded event args
+          const decodedData = decodeLogData(log);
+          const eventHash = `${log.transactionHash}-${log.logIndex}`;
+          
+          if (decodedData.decoded && decodedData.eventName === eventName) {
+            await handler(decodedData.args, eventHash);
+          } else {
+            logger.error(`Failed to decode ${eventName} event`, { log });
+          }
         } catch (error) {
-          logger.error(`Error decoding log for ${eventName}`, { error, log });
+          logger.error(`Error processing ${eventName} event`, { error, log });
         }
       }
     });
   };
 
   // Process historical ProposalCreated events
-  await processLogs('ProposalCreated', async (decodedArgs) => {
-    const { proposalId, proposer, startBlock, endBlock } = decodedArgs as {
-      proposalId: bigint;
-      proposer: `0x${string}`;
-      startBlock: bigint;
-      endBlock: bigint;
-    };
+  await processLogs('ProposalCreated', async (decodedArgs, eventHash) => {
+    const {
+      proposalId,
+      proposer,
+      voteStart,
+      voteEnd
+    } = decodedArgs;
 
     await handleProposalCreated(wsManager, farcasterBot, {
       proposalId: proposalId.toString(),
       proposer,
-      startBlock: Number(startBlock),
-      endBlock: Number(endBlock),
-    }, true);
+      voteStart: Number(voteStart),
+      voteEnd: Number(voteEnd)
+    }, true, eventHash);
   });
 
   // Process historical ProposalQueued events
-  await processLogs('ProposalQueued', async (decodedArgs) => {
-    const { proposalId, eta } = decodedArgs as {
-      proposalId: bigint;
-      eta: bigint;
-    };
-
-    await handleProposalQueued(farcasterBot, proposalId.toString(), Number(eta), true);
+  await processLogs('ProposalQueued', async (decodedArgs, eventHash) => {
+    const { proposalId, eta } = decodedArgs;
+    await handleProposalQueued(farcasterBot, proposalId.toString(), Number(eta), true, eventHash);
   });
 
   // Process historical ProposalExecuted events
-  await processLogs('ProposalExecuted', async (decodedArgs) => {
+  await processLogs('ProposalExecuted', async (decodedArgs, eventHash) => {
     const { proposalId } = decodedArgs as { proposalId: bigint };
-    await handleProposalExecuted(farcasterBot, proposalId.toString(), true);
+    await handleProposalExecuted(farcasterBot, proposalId.toString(), true, eventHash);
   });
 }
