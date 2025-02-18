@@ -4,6 +4,34 @@ import { WebSocketManager } from './services/WebSocketManager';
 import { logger } from './utils/logger';
 import { ProcessedBlock } from './models/ProcessedBlock';
 
+async function createProcessedBlock(
+  eventType: string,
+  proposalId: string,
+  status: string,
+  eventHash?: string
+) {
+  return ProcessedBlock.findOneAndUpdate(
+    { 
+      eventType,
+      'metadata.eventHash': eventHash
+    },
+    {
+      $set: {
+        metadata: {
+          proposalId,
+          eventHash,
+          isCasted: true,
+          status
+        }
+      }
+    },
+    { 
+      upsert: true,
+      new: true
+    }
+  );
+}
+
 export async function handleProposalCreated(
   wsManager: WebSocketManager,
   farcasterBot: FarcasterBot,
@@ -17,12 +45,10 @@ export async function handleProposalCreated(
   eventHash?: string
 ) {
   try {
-    // Check if this specific event hash was processed
     if (eventHash) {
       const processed = await ProcessedBlock.findOne({
         eventType: 'ProposalCreated',
-        'metadata.eventHash': eventHash,
-        'metadata.isCasted': true
+        'metadata.eventHash': eventHash
       });
       
       if (processed) {
@@ -32,83 +58,36 @@ export async function handleProposalCreated(
     }
 
     const { proposalId } = eventData;
-    
-    // Check if proposal already exists
     const existingProposal = await Proposal.findOne({ proposalId });
-    if (existingProposal) {
-      // If proposal exists and has been casted, skip
-      if (existingProposal.isCasted) {
-        logger.debug(`Proposal ${proposalId} already casted, skipping`);
-        return;
-      }
-      // If proposal exists but hasn't been casted, we'll proceed to cast it
+    
+    if (existingProposal?.isCasted) {
+      logger.debug(`Proposal ${proposalId} already casted, skipping`);
+      return;
     }
 
     const currentBlock = await wsManager.getClient().getBlockNumber();
-
-    // Create or update the proposal
-    const proposal = existingProposal || await Proposal.create({
-      ...eventData,
-      currentBlock: Number(currentBlock),
-      status: 'created',
-      source: 'onchain',
-      space: 'unlock-protocol',
-      isCasted: false
-    });
- 
-    logger.info(`Proposal ${proposalId} stored in database`, { proposal });
-
-    const tallyUrl = `https://www.tally.xyz/gov/unlock-protocol/proposal/${proposalId}`;
-
-    const missedProposalAnnouncement = `📜 [Historical] Missed Proposal Alert! 
-        Proposal ID: ${proposalId}
-        Proposer: ${eventData.proposer}
-        Voting started at block: ${eventData.voteStart}
-        Voting ended at block: ${eventData.voteEnd}
-
-        View proposal: ${tallyUrl}
-
-        This proposal went live while I was asleep... Catching up now so everyone stays informed! #DAOHistory`;
     
-    const realTimeProposalAnnouncement = `📜 New Proposal Created!
-        ID: ${proposalId}
-        Proposer: ${eventData.proposer}
-        Voting starts at block: ${eventData.voteStart}
-        Voting ends at block: ${eventData.voteEnd}
-        Current block: ${currentBlock}
-
-        View and vote on proposal: ${tallyUrl}`;
-
-    const announcement = isHistorical ? missedProposalAnnouncement : realTimeProposalAnnouncement;
-
-    // Publish cast and update isCasted flag
-    const castResponse = await farcasterBot.publishCast(announcement);
     await Proposal.findOneAndUpdate(
       { proposalId },
-      { isCasted: true },
-      { new: true }
+      {
+        ...eventData,
+        currentBlock: Number(currentBlock),
+        status: 'created',
+        source: 'onchain',
+        space: 'unlock-protocol',
+        isCasted: true
+      },
+      { upsert: true }
     );
 
-    logger.info(`Proposal ${proposalId} cast published and marked as casted`, { castResponse });
-    
-    // Mark as processed
     if (eventHash) {
-      await ProcessedBlock.findOneAndUpdate(
-        { 
-          eventType: 'ProposalCreated',
-          'metadata.eventHash': eventHash
-        },
-        {
-          $set: {
-            metadata: {
-              proposalId: eventData.proposalId,
-              isCasted: true,
-              status: 'created',
-              eventHash
-            }
-          }
-        },
-        { upsert: true }
+      await createProcessedBlock('ProposalCreated', proposalId, 'created', eventHash);
+    }
+
+    if (!isHistorical) {
+      const tallyUrl = `https://www.tally.xyz/gov/unlock-protocol/proposal/${proposalId}`;
+      await farcasterBot.publishCast(
+        `🗳 New proposal created!\n\nProposal ID: ${proposalId}\nVoting starts: ${new Date(eventData.voteStart * 1000).toUTCString()}\nVoting ends: ${new Date(eventData.voteEnd * 1000).toUTCString()}\n\nCast your vote at ${tallyUrl}`
       );
     }
   } catch (error) {
@@ -153,20 +132,20 @@ export async function handleProposalQueued(
       ...(isHistorical ? {} : { queuedTime: Date.now(), executionETA: eta })
     };
 
+    !isHistorical && await farcasterBot.publishCast(
+      `⏳ Proposal ${proposalId} has been queued. Execution ETA: ${new Date(eta * 1000).toUTCString()}`
+    );
+    
     await Proposal.findOneAndUpdate(
       { proposalId },
       updateData
     );
 
-    !isHistorical && await farcasterBot.publishCast(
-      `⏳ Proposal ${proposalId} has been queued. Execution ETA: ${new Date(eta * 1000).toUTCString()}`
-    );
-
-    if (eventHash) {
+    if (eventHash || !isHistorical) {
       await ProcessedBlock.findOneAndUpdate(
         { 
           eventType: 'ProposalQueued',
-          'metadata.eventHash': eventHash
+          'metadata.proposalId': proposalId
         },
         {
           $set: {
@@ -209,13 +188,16 @@ export async function handleProposalExecuted(
         return;
       }
     }
-
     const proposal = await Proposal.findOne({ proposalId });
     if (proposal?.isCasted && proposal.status === 'executed') {
       logger.debug(`Proposal ${proposalId} execution already casted, skipping`);
       return;
     }
 
+    !isHistorical && await farcasterBot.publishCast(
+      `✅ Proposal ${proposalId} has been executed!`
+    );
+    
     await Proposal.findOneAndUpdate(
       { proposalId },
       { 
@@ -225,15 +207,11 @@ export async function handleProposalExecuted(
       }
     );
 
-    !isHistorical && await farcasterBot.publishCast(
-      `✅ Proposal ${proposalId} has been executed!`
-    );
-
-    if (eventHash) {
+    if (eventHash || !isHistorical) {
       await ProcessedBlock.findOneAndUpdate(
         { 
           eventType: 'ProposalExecuted',
-          'metadata.eventHash': eventHash
+          'metadata.proposalId': proposalId
         },
         {
           $set: {

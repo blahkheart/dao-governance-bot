@@ -4,13 +4,12 @@ import {
   Log,
   Address,
   Abi,
-  AbiEvent,
+  parseAbi,
 } from 'viem';
 import { ProcessedBlock } from '../models/ProcessedBlock';
 import { logger } from '../utils/logger';
 import { withRetry } from '../utils/retry';
-import { decodeLogData, extractLogProperties } from '../utils/getTransactionLogs';
-
+import { decodeHistoricalLog, extractLogProperties } from '../utils/getTransactionLogs';
 
 interface BatchProcessingMetrics {
   fromBlock: number;
@@ -25,6 +24,12 @@ interface ProcessingConfig {
   readonly MAX_BATCH_SIZE: number;
   readonly TARGET_PROCESSING_TIME: number;
 }
+
+const TARGET_EVENTS = parseAbi([ 
+  'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 voteStart, uint256 voteEnd, string description)',
+  'event ProposalQueued(uint256 proposalId, uint256 eta)',
+  'event ProposalExecuted(uint256 proposalId)'
+])
 
 export class HistoricalEventProcessor<TAbi extends Abi> {
   private batchSize: number;
@@ -62,7 +67,11 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
   private async getLogsWithRetry(
     params: GetLogsParameters
   ): Promise<Log[]> {
-    return withRetry(() => this.client.getLogs(params));
+    return withRetry(() => this.client.getLogs(
+      {
+        ...params,
+        events: TARGET_EVENTS // scope events to the TARGET_EVENTS
+      }));
   }
 
   private async updateProcessedBlock(eventName: string, blockNumber: number): Promise<void> {
@@ -97,14 +106,19 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
   ): Promise<boolean> {
     const processed = await ProcessedBlock.findOne({
       eventType,
-      'metadata.eventHash': eventHash,
+      'metadata.proposalId': proposalId,
       'metadata.isCasted': true
     });
-    return !!processed;
+    if (!!processed) {
+      logger.warn(`Skipping already processed event: ${eventType} - ${eventHash}`);
+      return true;
+    }
+    return false;
   }
 
   private async markEventProcessed(
     eventType: string,
+    proposalId: string,
     blockNumber: number,
     metadata: {
       eventHash: string;
@@ -112,22 +126,75 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
       status?: string;
     }
   ): Promise<void> {
-    await ProcessedBlock.findOneAndUpdate(
-      { 
-        eventType,
-        'metadata.eventHash': metadata.eventHash
-      },
-      {
-        $set: {
-          lastProcessedBlock: blockNumber,
-          metadata: {
-            ...metadata,
-            isCasted: true
+    try {
+      await ProcessedBlock.findOneAndUpdate(
+        { 
+          eventType,
+          'metadata.proposalId': proposalId
+        },
+        {
+          $set: {
+            lastProcessedBlock: blockNumber,
+            metadata: {
+              ...metadata,
+              isCasted: true
+            }
           }
+        },
+        { upsert: true }
+      );
+    } catch (error: any) {
+      if (error.code === 11000) {
+        logger.warn(`Duplicate event detected: ${eventType} - ${metadata.eventHash}. Skipping insert.`);
+      } else {
+        throw error; // Rethrow for other errors
+      }
+    }
+  }
+
+  private async processEventBatch(
+    eventName: string,
+    from: number,
+    to: number,
+    processEvent: (args: any, eventHash: string) => Promise<void>
+  ): Promise<void> {
+    try {
+      const logs = await this.getLogsWithRetry({
+        address: this.contractAddress,
+        fromBlock: BigInt(from),
+        toBlock: BigInt(to),
+      });
+      
+      for (const log of logs) {
+        try {
+          const { args, eventHash, decodedEventName } = decodeHistoricalLog(log, this.abi);
+          
+          // Skip if event type doesn't match what we're currently processing
+          if (decodedEventName !== eventName) {
+            logger.debug(`Skipping ${decodedEventName} event during ${eventName} processing`);
+            continue;
+          }
+
+          await processEvent(args, eventHash);
+        } catch (error) {
+          logger.error(`Error processing individual event`, {
+            eventHash: log.transactionHash + '-' + log.logIndex,
+            error
+          });
         }
-      },
-      { upsert: true }
-    );
+      }
+
+      // Update last processed block
+      await ProcessedBlock.findOneAndUpdate(
+        { eventType: eventName },
+        { 
+          $set: { lastProcessedBlock: to }
+        },
+        { upsert: true }
+      );
+    } catch (error) {
+      throw error;
+    }
   }
 
   async processHistoricalEvents<TEventName extends string>(
@@ -146,41 +213,31 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
       batchSize: this.batchSize,
     });
 
- for (let from = fromBlock; from <= currentBlock; ) {
+    for (let from = fromBlock; from <= currentBlock; ) {
       const to = Math.min(from + this.batchSize - 1, currentBlock);
       const startTime = Date.now();
 
       try {
-        const logs = await this.getLogsWithRetry({
-          address: this.contractAddress,
-          fromBlock: BigInt(from),
-          toBlock: BigInt(to),
-        });
-
-        for (const log of logs) {
-            const eventHash = `${log.transactionHash}-${log.logIndex}`;
-            const properties = extractLogProperties(log, ['proposalId']);
-            const proposalId = properties?.proposalId?.toString();
-
-            // Check if this event was already processed
-            if (await this.isEventProcessed(eventName, eventHash, proposalId)) {
-                logger.debug(`Event ${eventHash} already processed, skipping`);
-                continue;
-            }
+        await this.processEventBatch(eventName, from, to, async (args, eventHash) => {
+          // Check if this event was already processed
+          if (await this.isEventProcessed(eventName, eventHash)) {
+            logger.debug(`Event ${eventHash} already processed, skipping`);
+            return;
+          }
 
           try {
-            await processor([log]);
+            await processor([{ ...args, transactionHash: eventHash }]);
             
             // Mark event as processed after successful processing
-            await this.markEventProcessed(eventName, Number(to), {
+            await this.markEventProcessed(eventName, args.proposalId?.toString() || '', Number(to), {
               eventHash,
-              proposalId,
+              proposalId: args.proposalId?.toString(),
               status: 'processed'
             });
           } catch (error) {
             logger.error(`Error processing individual event`, {
               eventHash,
-              proposalId,
+              proposalId: args.proposalId?.toString(),
               error: (error as Error).message
             });
             
@@ -193,7 +250,7 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
               {
                 $push: {
                   'metadata.processingErrors': {
-                    blockNumber: Number(log.blockNumber),
+                    blockNumber: Number(args.blockNumber),
                     error: (error as Error).message,
                     timestamp: new Date()
                   }
@@ -202,7 +259,7 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
               { upsert: true }
             );
           }
-        }
+        });
 
         // Update the last processed block
         await this.updateProcessedBlock(eventName, to);
@@ -214,7 +271,7 @@ export class HistoricalEventProcessor<TAbi extends Abi> {
         this.logBatchMetrics(eventName, {
           fromBlock: from,
           toBlock: to,
-          eventsCount: logs.length,
+          eventsCount: this.batchSize,
           processingTime
         });
         from = to + 1;

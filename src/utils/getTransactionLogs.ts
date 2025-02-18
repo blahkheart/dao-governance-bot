@@ -12,6 +12,12 @@ interface TransactionLogsResult {
   timestamp: number;
 }
 
+interface DecodedHistoricalLog {
+  args: any;
+  eventHash: string;
+  decodedEventName: string;
+}
+
 export function decodeLogData(log: Log) {
   try {
     const decodedLog = decodeEventLog({
@@ -121,6 +127,17 @@ export function extractLogProperties(log: Log, properties: string[]): Record<str
     }
   });
   return result;
+}
+
+export function decodeHistoricalLog(log: Log, abi: Abi): DecodedHistoricalLog {
+  const eventHash = `${log.transactionHash}-${log.logIndex}`;
+  const decodedLog = decodeLogData(log);
+
+  return {
+    args: decodedLog.args,
+    eventHash,
+    decodedEventName: decodedLog.eventName || 'Unknown'
+  };
 }
 
 // CLI execution

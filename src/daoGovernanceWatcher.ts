@@ -11,8 +11,9 @@ import { WebSocketManager } from './services/WebSocketManager';
 import { withRetry } from './utils/retry';
 import { logger } from './utils/logger';
 import { HistoricalEventProcessor } from './services/HistoricalEventProcessor';
-import { Abi } from 'viem';
+import { Abi, Log } from 'viem';
 import { decodeLogData, extractLogProperties } from './utils/getTransactionLogs';
+import { decodeHistoricalLog } from './utils/getTransactionLogs';
 const WATCH_ADDRESS = '0xa0c03bE2Cf62f171e29e0d8766677cF4c50d58F8';
 
 export async function watchGovernorContract(farcasterBot: FarcasterBot) {
@@ -129,8 +130,9 @@ async function setupEventWatchers(
           const formattedAmount = (Number(value) / 1e18).toFixed(2);
           
           const timestamp = new Date().toLocaleString();
-          
-          const message = `🔄 Token Transfer Alert:\n` +
+
+          const message = `🔄 Pay no attention to the man behind the curtain:\n` +
+            `This is a test of my cool powers 🤓 observing transfers...\n` +
             `💰 ${formattedAmount} tokens transferred\n` +
             `👤 From: ${from.slice(0,6)}...${from.slice(-4)}\n` +
             `👤 To: ${to.slice(0,6)}...${to.slice(-4)}\n` +
@@ -201,14 +203,19 @@ async function processHistoricalEvents(
     await processor.processHistoricalEvents(eventName, async (logs) => {
       for (const log of logs) {
         try {
-          const decodedData = decodeLogData(log);
-          const eventHash = `${log.transactionHash}-${log.logIndex}`;
+          const { args, eventHash, decodedEventName } = decodeHistoricalLog(log, DAO_GOVERNOR_ABI as Abi);
           
-          if (decodedData.decoded && decodedData.eventName === eventName) {
-            await handler(decodedData.args, eventHash);
-          } else {
+          if (decodedEventName === 'Unknown') {
             logger.error(`Failed to decode ${eventName} event`, { log });
+            continue;
           }
+
+          if (decodedEventName !== eventName) {
+            logger.debug(`Skipping ${decodedEventName} event during ${eventName} processing`);
+            continue;
+          }
+
+          await handler(args, eventHash);
         } catch (error) {
           logger.error(`Error processing ${eventName} event`, { error, log });
         }
