@@ -12,7 +12,8 @@
     "get-approved-signer": "ts-node src/getApprovedSigner.ts",
     "view:casts": "ts-node src/utils/viewCasts.ts",
     "get:logs": "ts-node src/utils/getTransactionLogs.ts",
-    "delete:cast":"ts-node src/utils/deleteBotCast.ts"
+    "delete:cast":"ts-node src/utils/deleteBotCast.ts",
+    "publish:cast":"ts-node src/utils/publishCast.ts"
   },
   "author": "Danny Thomx",
   "license": "MIT",
