@@ -4,7 +4,7 @@ export const proposalMessages = {
     const tallyUrl = `https://www.tally.xyz/gov/unlock-protocol/proposal/${proposalId}`;
     if (isHistorical) {
       return `
-        📜 Historical Proposal Alert!!\n\n
+        📜 Historical Proposal Alert!! 🗳\n\n
         Proposal ${proposalId}\n 
         was successfully created 🚀\n
         Voting period: ${formatDate(voteStart)} - ${formatDate(voteEnd)}\n
@@ -23,7 +23,7 @@ export const proposalMessages = {
 
   queued: (proposalId: string, eta: number, isHistorical: boolean) => {
     if (isHistorical) {
-        return `📜 Historical Proposal Alert!!\n\n
+        return `📜 Historical Proposal Alert!! ⏳\n\n
         Proposal ${proposalId}\n 
         was queued for execution at ${formatDate(eta)}.`;
     }
@@ -32,7 +32,7 @@ export const proposalMessages = {
 
   executed: (proposalId: string, isHistorical: boolean) => {
     if (isHistorical) {
-      return `📜 Historical Proposal Alert!!\n\n
+      return `📜 Historical Proposal Alert!! 🪐\n\n
       Proposal ${proposalId}\n 
       was successfully executed ✅`;
     }

@@ -9,6 +9,8 @@
     "start": "npm run build && node dist/index.js",
     "start:gov": "ts-node src/index.ts",
     "start:prod": "node dist/index.js",
+    "ponder:dev": "ponder dev",
+    "ponder:start": "ponder start",
     "get-approved-signer": "ts-node src/getApprovedSigner.ts",
     "view:casts": "ts-node src/utils/viewCasts.ts",
     "get:logs": "ts-node src/utils/getTransactionLogs.ts",

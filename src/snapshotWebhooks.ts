@@ -1,6 +1,7 @@
 import express from 'express';
 import { FarcasterBot } from './agent';
 import { Proposal } from './models/Proposal';
+import { logger } from './utils/logger';
 
 interface SnapshotEvent {
   id: string;
@@ -12,6 +13,7 @@ interface SnapshotEvent {
 export function setupSnapshotWebhooks(app: express.Express, farcasterBot: FarcasterBot) {
   app.post('/webhook', async (req, res) => {
     const event = req.body as SnapshotEvent;
+    logger.info(`Snapshot webhook ping received`);
     
     try {
       switch (event.event) {
