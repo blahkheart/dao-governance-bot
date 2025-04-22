@@ -1,6 +1,6 @@
 import { createConfig } from "ponder";
 import { http } from "viem";
-import DAO_GOVERNOR_ABI from "./abis/GovernorContractAbi";
+import { DAO_GOVERNOR_ABI } from "./src/abi/daoGovernor";
 
 const { START_BLOCK, DAO_GOVERNOR_ADDRESS } = process.env;
 

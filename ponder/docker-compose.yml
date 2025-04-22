@@ -1,0 +1,16 @@
+services:
+  app:
+    container_name: dao-governance-bot
+    build: .
+    ports:
+      - "42069:42069"
+    environment:
+      - NEYNAR_API_KEY=${NEYNAR_API_KEY}
+      - FARCASTER_BOT_MNEMONIC=${FARCASTER_BOT_MNEMONIC}
+      - SIGNER_UUID=${SIGNER_UUID}
+      - DAO_GOVERNOR_ADDRESS=${DAO_GOVERNOR_ADDRESS}
+      - START_BLOCK=${START_BLOCK}
+      - HISTORICAL_EVENTS_CUTOFF=${HISTORICAL_EVENTS_CUTOFF}
+      - PONDER_RPC_URL_BASE_MAINNET=${PONDER_RPC_URL_BASE_MAINNET}
+      - MONGODB_URI=${MONGODB_URI}
+      - LOG_LEVEL=${LOG_LEVEL:-info} 

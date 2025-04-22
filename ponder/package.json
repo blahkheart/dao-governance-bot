@@ -1,28 +1,47 @@
 {
-  "name": "ponder",
-  "version": "0.0.1",
+  "name": "dao-governance-bot",
+  "version": "1.0.0",
+  "description": "A bot that monitors DAO governance proposals on-chain and posts updates to Farcaster when events occur.",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/dao-governance-bot"
+  },
   "scripts": {
     "dev": "ponder dev",
     "start": "ponder start",
     "db": "ponder db",
     "codegen": "ponder codegen",
     "lint": "eslint .",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "view:casts": "node --loader ts-node/esm src/utils/viewCasts.ts",
+    "delete:cast": "node --loader ts-node/esm src/utils/deleteBotCast.ts",
+    "publish:cast": "node --loader ts-node/esm src/utils/publishCast.ts",
+    "get-approved-signer": "node --loader ts-node/esm src/utils/getApprovedSigner.ts",
+    "build:docker": "docker-compose build",
+    "start:docker": "docker-compose up -d"
   },
   "dependencies": {
-    "ponder": "^0.9.17",
+    "@neynar/nodejs-sdk": "^2.30.0",
+    "dotenv": "^16.5.0",
     "hono": "^4.5.0",
-    "viem": "^2.21.3"
+    "mongoose": "^7.6.3",
+    "ponder": "^0.9.17",
+    "viem": "^2.21.3",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",
     "eslint": "^8.53.0",
     "eslint-config-ponder": "^0.9.17",
+    "ts-node": "^10.9.2",
     "typescript": "^5.2.2"
   },
   "engines": {
     "node": ">=18.14"
-  }
+  },
+  "author": "Danny Thomx",
+  "license": "MIT"
 }

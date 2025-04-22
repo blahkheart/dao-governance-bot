@@ -1,0 +1,7 @@
+.env
+.env.local
+.git
+node_modules
+dist
+README.md
+.ponder 

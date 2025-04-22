@@ -4,8 +4,8 @@ import {
   proposalQueued,
   proposalExecuted,
 } from "ponder:schema";
-import { publishCast } from "../../src/utils/publishCast";
-import { proposalMessages } from '../../src/utils/messages';
+import { publishCast } from "./utils/publishCast";
+import { proposalMessages } from './utils/messages';
 
 const { HISTORICAL_EVENTS_CUTOFF } = process.env;
 const isHistoricalEvent = (event: any): boolean => Number(event.block.number) < Number(HISTORICAL_EVENTS_CUTOFF);

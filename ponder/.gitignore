@@ -1,5 +1,7 @@
 # Dependencies
 /node_modules
+.pnp
+.pnp.js
 
 # Debug
 npm-debug.log*
@@ -14,6 +16,24 @@ yarn-error.log*
 .env*.local
 .env
 
-# Ponder
+# Build outputs
+/dist/
+/build/
+
+# Ponder specific
 /generated/
 /.ponder/
+
+# Logs
+/logs/
+*.log
+
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cache
+.cache/
+.npm
